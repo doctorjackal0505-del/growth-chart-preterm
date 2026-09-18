@@ -1,29 +1,39 @@
 """
-แอปติดตามการเติบโตของทารกคลอดก่อนกำหนด (Preterm Growth Tracker) 🌸
+แอปติดตามการเติบโตของทารกคลอดก่อนกำหนด — โครงการ "Prachuap Model" 🌸
 ====================================================================
-ออกแบบมาให้คุณแม่หลังคลอดที่อาจเหนื่อยล้าใช้งานได้ง่าย น่ารัก อบอุ่นใจ
-- คำนวณ "อายุครรภ์ปรับแก้ (Corrected GA)" ให้อัตโนมัติจากวันเกิด + อายุครรภ์แรกเกิด
-- ติดตามน้ำหนัก (กก.) และความยาว (ซม.) ในกราฟเดียว แบบ dual Y-axis
-- ให้กำลังใจการเลี้ยงลูกด้วยนมแม่อย่างต่อเนื่อง
+วัตถุประสงค์: ใช้เป็นเครื่องมือให้กำลังใจคุณแม่หลังคลอดในการเลี้ยงลูกด้วยนมแม่
+อย่างต่อเนื่องที่บ้าน "ไม่ใช่" เครื่องมือประเมินพัฒนาการทางการแพทย์แบบสมบูรณ์
+(จึงไม่รวมข้อมูลเส้นรอบศีรษะ และแสดงเฉพาะเส้น P50 เพื่อลดความกังวลของคุณแม่)
 
-หมายเหตุสำคัญ: เส้นเปอร์เซ็นไทล์ (P3/P50/P97) ในไฟล์นี้เป็น "ข้อมูลจำลอง (mock data)"
-ที่สร้างขึ้นด้วยสูตรทางคณิตศาสตร์เพื่อสาธิตการทำงานของแอปเท่านั้น ไม่ใช่ตาราง
-Fenton 2025 ฉบับทางการที่ผ่านการรับรองทางคลินิก ก่อนใช้งานจริงกับผู้ป่วยควรแทนที่
-ด้วยชุดข้อมูลที่ผ่านการตรวจสอบ และใช้ร่วมกับดุลยพินิจของกุมารแพทย์เสมอ
+ระบบระบุตัวตนด้วย "รหัสกลุ่มตัวอย่าง (BF Code)" ที่พยาบาลวิจัยเป็นผู้กำหนดให้
+รองรับการเปิดลิงก์ที่แนบรหัสไว้ล่วงหน้า เช่น ?bf=BF001 เพื่อให้คุณแม่ไม่ต้องพิมพ์เอง
+
+หมายเหตุสำคัญด้านข้อมูล: เส้น P50 ในไฟล์นี้เป็น "ข้อมูลจำลอง (mock data)" ที่สร้างขึ้น
+ด้วยสูตรทางคณิตศาสตร์เพื่อสาธิตการทำงานของแอปเท่านั้น ไม่ใช่ตาราง Fenton 2025 ฉบับ
+ทางการที่ผ่านการรับรองทางคลินิก ก่อนใช้งานจริงกับกลุ่มตัวอย่างควรแทนที่ด้วยชุดข้อมูล
+ที่ผ่านการตรวจสอบจากทีมวิจัย/กุมารแพทย์
+
+หมายเหตุด้านการเก็บข้อมูล: แอปนี้พยายามบันทึกประวัติลงไฟล์ JSON ในเครื่องเพื่อจำลอง
+การบันทึกถาวรตามรหัส BF Code หากรันบนแพลตฟอร์มที่ไม่อนุญาตให้เขียนไฟล์ (เช่นบาง
+บริการ cloud แบบ read-only) แอปจะยังทำงานได้ปกติโดยใช้ st.session_state เก็บข้อมูล
+ไว้ชั่วคราวในเซสชันนั้นๆ แทน
 """
+
+import json
+import os
+from datetime import date
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-from datetime import date, datetime
 
 # ============================================================================
-# ตั้งค่าหน้าเพจ + ธีมน่ารัก พาสเทล
+# ตั้งค่าหน้าเพจ + ธีมพาสเทล
 # ============================================================================
 st.set_page_config(
-    page_title="ติดตามการเติบโตของหนูน้อย 🌸",
+    page_title="Prachuap Model — ติดตามการเติบโตของหนูน้อย 🌸",
     page_icon="👶",
     layout="centered",
 )
@@ -38,52 +48,52 @@ st.markdown(
             border-radius: 20px;
             border: 1px solid #FADCE6;
         }
-        .big-title { font-size: 1.7rem; font-weight: 800; margin-bottom: 0.1rem; }
-        .sub-title { font-size: 1.0rem; color: #9B8B8F; margin-bottom: 1.0rem; }
+        .big-title { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.1rem; }
+        .sub-title { font-size: 0.95rem; color: #9B8B8F; margin-bottom: 0.8rem; }
         .ga-badge {
-            background-color: #E9F5FF;
-            border: 1px solid #CFE8FF;
-            border-radius: 16px;
-            padding: 0.7rem 1rem;
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #3A6EA5;
-            text-align: center;
-            margin-bottom: 0.8rem;
+            background-color: #E9F5FF; border: 1px solid #CFE8FF; border-radius: 16px;
+            padding: 0.7rem 1rem; font-size: 1.0rem; font-weight: 700; color: #3A6EA5;
+            text-align: center; margin-bottom: 0.8rem;
         }
-        div.stButton > button, button[kind="formSubmit"] {
-            border-radius: 14px;
+        .bf-badge {
+            background-color: #F1EBFF; border: 1px solid #DFD2FF; border-radius: 16px;
+            padding: 0.5rem 1rem; font-size: 0.95rem; font-weight: 700; color: #6A4FA0;
+            text-align: center; margin-bottom: 0.8rem;
         }
+        div.stButton > button, button[kind="formSubmit"] { border-radius: 14px; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 WEEK_MIN, WEEK_MAX = 22, 50
-Z_SCORES = {3: -1.881, 50: 0.0, 97: 1.881}
+DATA_FILE = "bf_growth_data.json"
 
-COLOR_WEIGHT_BOY = "#7FB3E8"    # ฟ้าพาสเทล
-COLOR_WEIGHT_GIRL = "#F2A6C4"   # ชมพูพาสเทล
-COLOR_LENGTH = "#8FD4A8"        # เขียวมิ้นต์พาสเทล
-COLOR_REF_LINE = "#C9C9C9"      # เทาอ่อนจางๆ สำหรับเส้นอ้างอิง
+COLOR_WEIGHT_BOY = "#7FB3E8"
+COLOR_WEIGHT_GIRL = "#F2A6C4"
+COLOR_LENGTH = "#8FD4A8"
+COLOR_P50_LINE = "#B9B9B9"
 
+DISCLAIMER_TEXT = (
+    "⚠️ กราฟนี้จัดทำขึ้นเพื่อเป็นกำลังใจในการส่งเสริมการเลี้ยงลูกด้วยนมแม่เท่านั้น "
+    "ไม่ได้ใช้ในการประเมินทางการแพทย์แบบสมบูรณ์ หากมีข้อสงสัยเรื่องพัฒนาการ "
+    "ควรปรึกษากุมารแพทย์"
+)
 
 # ============================================================================
-# ข้อมูลจำลองเส้น Fenton 2025 (น้ำหนัก + ความยาว) แยกตามเพศ — hardcoded ผ่านสูตร
+# ข้อมูลจำลองเส้น P50 (Fenton-style) — น้ำหนัก + ความยาว แยกตามเพศ
 # ============================================================================
 @st.cache_data
-def generate_fenton_mock_data():
+def generate_fenton_p50_data():
     """
-    สร้างข้อมูลจำลองเส้นโค้งการเติบโตสไตล์ Fenton แยกตามเพศ (ชาย/หญิง)
+    สร้างข้อมูลจำลองเส้นค่ากลาง (P50) สไตล์ Fenton แยกตามเพศ (ชาย/หญิง)
     สำหรับน้ำหนัก (กก.) และความยาว (ซม.) อายุครรภ์ปรับแก้ 22-50 สัปดาห์
-    เฉพาะเปอร์เซ็นไทล์ P3 / P50 / P97 (ใช้ logistic growth curve + z-score)
+    (ใช้เฉพาะ P50 ตามข้อกำหนด เพื่อลดความกังวลของคุณแม่)
     """
     weeks = np.arange(WEEK_MIN, WEEK_MAX + 1)
 
     def logistic(x, L, k, x0):
         return L / (1 + np.exp(-k * (x - x0)))
-
-    data = {"boy": {}, "girl": {}}
 
     weight_params = {
         "boy":  dict(L=6.1, k=0.145, x0=35.5, base=0.30),
@@ -94,67 +104,116 @@ def generate_fenton_mock_data():
         "girl": dict(L=33.0, k=0.138, x0=34.0, base=24.0),
     }
 
+    data = {}
     for sex in ["boy", "girl"]:
         wp = weight_params[sex]
-        w_median = wp["base"] + logistic(weeks, wp["L"], wp["k"], wp["x0"])
-        w_sd = 0.13 * w_median + 0.02
-        weight_df = pd.DataFrame({
-            "week": weeks,
-            "P3": w_median + Z_SCORES[3] * w_sd,
-            "P50": w_median,
-            "P97": w_median + Z_SCORES[97] * w_sd,
-        })
-
+        weight_p50 = wp["base"] + logistic(weeks, wp["L"], wp["k"], wp["x0"])
         lp = length_params[sex]
-        l_median = lp["base"] + logistic(weeks, lp["L"], lp["k"], lp["x0"])
-        l_sd = 0.045 * l_median + 0.3
-        length_df = pd.DataFrame({
-            "week": weeks,
-            "P3": l_median + Z_SCORES[3] * l_sd,
-            "P50": l_median,
-            "P97": l_median + Z_SCORES[97] * l_sd,
-        })
-
-        data[sex]["weight"] = weight_df
-        data[sex]["length"] = length_df
-
+        length_p50 = lp["base"] + logistic(weeks, lp["L"], lp["k"], lp["x0"])
+        data[sex] = {
+            "weight": pd.DataFrame({"week": weeks, "P50": weight_p50}),
+            "length": pd.DataFrame({"week": weeks, "P50": length_p50}),
+        }
     return data
 
 
-FENTON_DATA = generate_fenton_mock_data()
+FENTON_P50 = generate_fenton_p50_data()
+
+
+def get_p50_weight_at_ga(sex: str, ga_weeks: float) -> float:
+    """คืนค่าน้ำหนัก P50 (กก.) โดยประมาณค่า ณ อายุครรภ์ปรับแก้ที่กำหนด (interpolation)"""
+    df = FENTON_P50[sex]["weight"]
+    ga_clamped = min(max(ga_weeks, WEEK_MIN), WEEK_MAX)
+    return float(np.interp(ga_clamped, df["week"], df["P50"]))
+
 
 # ============================================================================
-# session_state — เก็บประวัติเป็น Pandas DataFrame
+# การจัดเก็บ/โหลดข้อมูลตามรหัส BF Code — จำลองด้วยไฟล์ JSON ในเครื่อง
 # ============================================================================
-if "history" not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=[
-        "sex", "entry_date", "corrected_age_weeks", "corrected_age_label", "weight", "length"
-    ])
+def load_all_data() -> dict:
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_all_data(data: dict) -> bool:
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        # เขียนไฟล์ไม่ได้ (เช่นระบบ read-only) — ยังทำงานต่อได้ด้วย session_state
+        return False
+
+
+if "all_data" not in st.session_state:
+    st.session_state.all_data = load_all_data()
 
 # ============================================================================
-# ข้อความให้กำลังใจ
+# ข้อความให้กำลังใจ / คำแนะนำ
 # ============================================================================
-WEIGHT_UP_MESSAGES = [
-    "เก่งมากเลยค่ะคุณแม่! 💖 น้ำหนักหนูขึ้นแล้ว น้ำนมแม่คือยารักษาและภูมิคุ้มกันที่ดีที่สุดเลย ทำต่อไปนะคะ!",
-    "สุดยอดไปเลยค่ะ! 🌟 น้ำหนักน้องขึ้นสวยมาก คุณแม่คือฮีโร่ตัวจริงของหนูน้อยเลยค่ะ",
-    "ยอดเยี่ยมมากค่ะ! 🍼 ทุกหยดน้ำนมของคุณแม่คือพลังที่ทำให้หนูแข็งแรงขึ้นทุกวัน สู้ๆ นะคะ",
-    "เยี่ยมไปเลยค่ะคุณแม่! ✨ การเติบโตของหนูวันนี้คือผลลัพธ์จากความรักและความพยายามของคุณแม่ล้วนๆ",
+ABOVE_P50_MESSAGES = [
+    "เก่งมากเลยค่ะคุณแม่! 💖 น้ำหนักและส่วนสูงของหนูเติบโตตามเกณฑ์เลย พลังน้ำนมแม่วิเศษที่สุด สู้ต่อไปนะคะ!",
+    "สุดยอดไปเลยค่ะ! 🌟 หนูน้อยโตดีมาก คุณแม่คือฮีโร่ตัวจริงของลูกเลยค่ะ",
+    "ยอดเยี่ยมมากค่ะ! 🍼 ทุกหยดน้ำนมของคุณแม่คือพลังที่ทำให้หนูแข็งแรงขึ้นทุกวัน",
 ]
-STEADY_MESSAGES = [
-    "ไม่เป็นไรเลยค่ะ ทุกก้าวเล็กๆ ของหนูก็คือความสำเร็จของคุณแม่ 🤍 อย่าเพิ่งกังวลไปนะคะ",
-    "การเติบโตของทารกคลอดก่อนกำหนดต้องใช้เวลาค่ะ คุณแม่ทำดีที่สุดแล้ว 🌼 ให้กำลังใจตัวเองด้วยนะคะ",
+BELOW_P50_MESSAGES = [
+    "หนูเติบโตตามจังหวะของตัวเองค่ะ ช่วงนี้น้ำหนักอาจจะยังไม่ถึงเส้นเกณฑ์เป๊ะๆ คุณแม่ไม่ต้องกังวลนะคะ "
+    "แนะนำให้คุณแม่ให้นมอย่างสม่ำเสมอ และนำข้อมูลนี้ไปปรึกษาคุณหมอหรือพยาบาลนมแม่ในวันนัด "
+    "เพื่อรับคำแนะนำดีๆ เพิ่มเติมค่ะ ✌️",
+    "ไม่เป็นไรเลยค่ะ ทารกแต่ละคนมีจังหวะการเติบโตไม่เหมือนกัน 🤍 ให้นมแม่ต่อเนื่องนะคะ "
+    "และลองพูดคุยกับพยาบาลนมแม่หรือกุมารแพทย์ในนัดครั้งถัดไปเพื่อความสบายใจค่ะ",
 ]
 FIRST_ENTRY_MESSAGES = [
     "ยินดีต้อนรับสู่เส้นทางการเติบโตของหนูน้อยนะคะ 💖 คุณแม่เก่งมากที่ใส่ใจดูแลขนาดนี้ค่ะ",
 ]
 
 # ============================================================================
+# BF Code — รับค่าจาก query_params หรือให้คุณแม่กรอกเอง
+# ============================================================================
+query_params = st.query_params
+default_bf_code = query_params.get("bf", "")
+
+st.markdown('<div class="big-title">🌸 Prachuap Model</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-title">แอปติดตามการเติบโตของหนูน้อย เพื่อเป็นกำลังใจให้คุณแม่เลี้ยงลูกด้วยนมแม่</div>',
+    unsafe_allow_html=True,
+)
+st.warning(DISCLAIMER_TEXT)
+
+with st.sidebar:
+    st.markdown("### 🔑 ระบุตัวตน")
+    bf_code = st.text_input(
+        "รหัสกลุ่มตัวอย่าง (BF Code)",
+        value=default_bf_code,
+        help="รหัสนี้ได้รับจากพยาบาลวิจัยของโครงการ Prachuap Model กรุณากรอกให้ตรงกันทุกครั้ง "
+             "เพื่อป้องกันข้อมูลสลับกับคุณแม่ท่านอื่น",
+        placeholder="เช่น BF001",
+    ).strip().upper()
+
+    if default_bf_code and bf_code == default_bf_code.strip().upper():
+        st.caption(f"✅ ดึงรหัส **{default_bf_code}** จากลิงก์ที่พยาบาลส่งให้อัตโนมัติ")
+
+    st.divider()
+
+if not bf_code:
+    st.info("👈 กรุณากรอก **รหัสกลุ่มตัวอย่าง (BF Code)** ในแถบด้านซ้ายก่อนเริ่มบันทึกข้อมูลนะคะ")
+    st.stop()
+
+st.markdown(f'<div class="bf-badge">🔑 กำลังบันทึกข้อมูลของรหัส: {bf_code}</div>', unsafe_allow_html=True)
+
+if bf_code not in st.session_state.all_data:
+    st.session_state.all_data[bf_code] = []
+
+# ============================================================================
 # Sidebar: ฟอร์มกรอกข้อมูล
 # ============================================================================
 with st.sidebar:
-    st.markdown("### 🌸 กรอกข้อมูลวันนี้")
-    st.caption("กรอกทุกครั้งที่ชั่งน้ำหนัก/วัดตัวหนูน้อยนะคะ")
-
+    st.markdown("### 📝 กรอกข้อมูลวันนี้")
     sex_label = st.radio("👶 เพศของทารก", ["ชาย", "หญิง"], horizontal=True)
 
     st.markdown("**📅 ข้อมูลสำหรับคำนวณอายุครรภ์ปรับแก้**")
@@ -173,8 +232,7 @@ with st.sidebar:
     # ---- คำนวณอายุครรภ์ปรับแก้ (Corrected GA) อัตโนมัติ ----
     chronological_age_days = (entry_date - birth_date).days
     total_birth_ga_days = (ga_birth_weeks * 7) + ga_birth_days
-    corrected_ga_days = total_birth_ga_days + chronological_age_days
-    corrected_ga_days = max(corrected_ga_days, 0)
+    corrected_ga_days = max(total_birth_ga_days + chronological_age_days, 0)
     corrected_ga_weeks_int = corrected_ga_days // 7
     corrected_ga_remainder_days = corrected_ga_days % 7
     corrected_ga_weeks_decimal = corrected_ga_days / 7.0
@@ -195,121 +253,97 @@ with st.sidebar:
         )
         submitted = st.form_submit_button("💾 บันทึกข้อมูล", use_container_width=True)
 
-    if not st.session_state.history.empty:
+    if st.session_state.all_data.get(bf_code):
         st.write("")
-        if st.button("🗑️ ล้างข้อมูลทั้งหมด", use_container_width=True):
-            st.session_state.history = st.session_state.history.iloc[0:0]
+        if st.button("🗑️ ล้างข้อมูลของรหัสนี้", use_container_width=True):
+            st.session_state.all_data[bf_code] = []
+            save_all_data(st.session_state.all_data)
             st.rerun()
 
 sex_key = "boy" if sex_label == "ชาย" else "girl"
 
 # ============================================================================
-# บันทึกข้อมูล + ข้อความให้กำลังใจ
+# บันทึกข้อมูล + ข้อความให้กำลังใจ / คำแนะนำ (ตามเงื่อนไข P50)
 # ============================================================================
 if submitted:
-    new_row = {
+    new_record = {
         "sex": sex_key,
-        "entry_date": entry_date,
+        "entry_date": entry_date.isoformat(),
         "corrected_age_weeks": round(corrected_ga_weeks_decimal, 2),
         "corrected_age_label": f"{corrected_ga_weeks_int} สัปดาห์ {corrected_ga_remainder_days} วัน",
         "weight": current_weight,
         "length": current_length,
     }
-    prev_rows = st.session_state.history[st.session_state.history["sex"] == sex_key]
+    is_first_entry = len(st.session_state.all_data[bf_code]) == 0
+    st.session_state.all_data[bf_code].append(new_record)
+    save_all_data(st.session_state.all_data)
 
-    st.session_state.history = pd.concat(
-        [st.session_state.history, pd.DataFrame([new_row])], ignore_index=True
-    )
-
-    if prev_rows.empty:
+    if is_first_entry:
         st.success(np.random.choice(FIRST_ENTRY_MESSAGES))
     else:
-        last_row = prev_rows.sort_values("corrected_age_weeks").iloc[-1]
-        if current_weight > last_row["weight"]:
-            st.success(np.random.choice(WEIGHT_UP_MESSAGES))
+        p50_weight_now = get_p50_weight_at_ga(sex_key, corrected_ga_weeks_decimal)
+        if current_weight >= p50_weight_now:
+            st.success(np.random.choice(ABOVE_P50_MESSAGES))
             st.balloons()
         else:
-            st.info(np.random.choice(STEADY_MESSAGES))
+            st.warning(np.random.choice(BELOW_P50_MESSAGES))
 
 # ============================================================================
-# หน้าหลัก
+# หน้าหลัก — กราฟรวม (Dual Y-Axis) เฉพาะเส้น P50
 # ============================================================================
-st.markdown('<div class="big-title">🌸 การเติบโตของหนูน้อย</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="sub-title">ติดตามน้ำหนัก 👶 และความยาว 🍼 เทียบกับกราฟมาตรฐานสำหรับทารกคลอดก่อนกำหนด</div>',
-    unsafe_allow_html=True,
-)
+records = st.session_state.all_data.get(bf_code, [])
+records_df = pd.DataFrame(records).sort_values("corrected_age_weeks") if records else pd.DataFrame()
 
-baby_records = st.session_state.history[st.session_state.history["sex"] == sex_key].sort_values("corrected_age_weeks")
 weight_color = COLOR_WEIGHT_BOY if sex_key == "boy" else COLOR_WEIGHT_GIRL
-weight_df = FENTON_DATA[sex_key]["weight"]
-length_df = FENTON_DATA[sex_key]["length"]
+baby_emoji = "👦" if sex_key == "boy" else "👧"
+weight_p50_df = FENTON_P50[sex_key]["weight"]
+length_p50_df = FENTON_P50[sex_key]["length"]
 
-# ----------------------------------------------------------------------------
-# กราฟรวม: Dual Y-Axis (น้ำหนัก ซ้าย / ความยาว ขวา)
-# ----------------------------------------------------------------------------
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-# --- โซนแรเงา "พลังนมแม่ล้วน" (สัปดาห์ 22-40) ---
-fig.add_vrect(
-    x0=WEEK_MIN, x1=40,
-    fillcolor="#FFE3EE" if sex_key == "girl" else "#E3F0FF",
-    opacity=0.45, line_width=0, layer="below",
-)
-fig.add_annotation(
-    x=WEEK_MIN + 0.4, y=1.0, xref="x", yref="paper",
-    text="✨ พลังนมแม่ล้วน",
-    showarrow=False,
-    font=dict(size=13, color="#B15C86" if sex_key == "girl" else "#3A6EA5"),
-    align="left", xanchor="left", yanchor="top",
+# --- เส้น P50 น้ำหนัก (แกนซ้าย) — "เส้นตามเกณฑ์" จางๆ ---
+fig.add_trace(
+    go.Scatter(
+        x=weight_p50_df["week"], y=weight_p50_df["P50"],
+        mode="lines", name="น้ำหนัก: เส้นตามเกณฑ์",
+        line=dict(color=COLOR_P50_LINE, width=2.0, dash="dash"),
+        opacity=0.8,
+        hovertemplate="น้ำหนักตามเกณฑ์: %{y:.2f} กก.<extra></extra>",
+    ),
+    secondary_y=False,
 )
 
-# --- เส้นอ้างอิงน้ำหนัก P3/P50/P97 (แกนซ้าย) — จางๆ เส้นประ ---
-for pct, dash in [(97, "dash"), (50, "solid"), (3, "dash")]:
-    fig.add_trace(
-        go.Scatter(
-            x=weight_df["week"], y=weight_df[f"P{pct}"],
-            mode="lines", name=f"น้ำหนัก P{pct} ({'เกณฑ์สูง' if pct==97 else 'ตามเกณฑ์' if pct==50 else 'เกณฑ์ต่ำ'})",
-            line=dict(color=COLOR_REF_LINE, width=1.4 if pct != 50 else 1.8, dash=dash),
-            opacity=0.75,
-            hovertemplate=f"น้ำหนัก P{pct}: %{{y:.2f}} กก.<extra></extra>",
-        ),
-        secondary_y=False,
-    )
+# --- เส้น P50 ความยาว (แกนขวา) — "เส้นตามเกณฑ์" จางๆ ---
+fig.add_trace(
+    go.Scatter(
+        x=length_p50_df["week"], y=length_p50_df["P50"],
+        mode="lines", name="ความยาว: เส้นตามเกณฑ์",
+        line=dict(color=COLOR_P50_LINE, width=2.0, dash="dot"),
+        opacity=0.6,
+        hovertemplate="ความยาวตามเกณฑ์: %{y:.2f} ซม.<extra></extra>",
+    ),
+    secondary_y=True,
+)
 
-# --- เส้นอ้างอิงความยาว P3/P50/P97 (แกนขวา) — จางๆ เส้นประ ---
-for pct, dash in [(97, "dash"), (50, "solid"), (3, "dash")]:
+# --- เส้นข้อมูลของหนูน้อย ---
+if not records_df.empty:
     fig.add_trace(
         go.Scatter(
-            x=length_df["week"], y=length_df[f"P{pct}"],
-            mode="lines", name=f"ความยาว P{pct} ({'เกณฑ์สูง' if pct==97 else 'ตามเกณฑ์' if pct==50 else 'เกณฑ์ต่ำ'})",
-            line=dict(color=COLOR_REF_LINE, width=1.4 if pct != 50 else 1.8, dash=dash),
-            opacity=0.55,
-            hovertemplate=f"ความยาว P{pct}: %{{y:.2f}} ซม.<extra></extra>",
-        ),
-        secondary_y=True,
-    )
-
-# --- เส้นน้ำหนักของหนูน้อย (แกนซ้าย) — หนา พาสเทล + emoji 👶 ---
-if not baby_records.empty:
-    fig.add_trace(
-        go.Scatter(
-            x=baby_records["corrected_age_weeks"], y=baby_records["weight"],
-            mode="lines+text", name="น้ำหนักของหนู 👶",
+            x=records_df["corrected_age_weeks"], y=records_df["weight"],
+            mode="lines+text", name=f"น้ำหนักของหนู {baby_emoji}",
             line=dict(color=weight_color, width=5),
-            text=["👶"] * len(baby_records),
+            text=[baby_emoji] * len(records_df),
             textposition="middle center", textfont=dict(size=20),
             hovertemplate="น้ำหนักของหนู: %{y:.2f} กก.<extra></extra>",
         ),
         secondary_y=False,
     )
-    # --- เส้นความยาวของหนูน้อย (แกนขวา) — หนา เขียวมิ้นต์ + emoji 🍼 ---
     fig.add_trace(
         go.Scatter(
-            x=baby_records["corrected_age_weeks"], y=baby_records["length"],
-            mode="lines+text", name="ความยาวของหนู 🍼",
+            x=records_df["corrected_age_weeks"], y=records_df["length"],
+            mode="lines+text", name=f"ความยาวของหนู {baby_emoji}",
             line=dict(color=COLOR_LENGTH, width=5),
-            text=["🍼"] * len(baby_records),
+            text=[baby_emoji] * len(records_df),
             textposition="middle center", textfont=dict(size=20),
             hovertemplate="ความยาวของหนู: %{y:.2f} ซม.<extra></extra>",
         ),
@@ -317,20 +351,14 @@ if not baby_records.empty:
     )
 
 fig.update_layout(
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    hovermode="x unified",
-    legend=dict(
-        orientation="h", yanchor="bottom", y=1.16, xanchor="center", x=0.5,
-        font=dict(size=10),
-    ),
-    margin=dict(t=110, b=10, l=10, r=10),
-    height=520,
+    plot_bgcolor="white", paper_bgcolor="white", hovermode="x unified",
+    legend=dict(orientation="h", yanchor="bottom", y=1.12, xanchor="center", x=0.5, font=dict(size=11)),
+    margin=dict(t=90, b=10, l=10, r=10),
+    height=500,
     font=dict(size=13, color="#5A5A5A"),
 )
 fig.update_xaxes(
-    title="อายุครรภ์ปรับแก้ (สัปดาห์)",
-    range=[WEEK_MIN, WEEK_MAX], dtick=4,
+    title="อายุครรภ์ปรับแก้ (สัปดาห์)", range=[WEEK_MIN, WEEK_MAX], dtick=4,
     showgrid=False, showline=True, linecolor="#E5E5E5", zeroline=False,
 )
 fig.update_yaxes(
@@ -349,9 +377,9 @@ st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 # ----------------------------------------------------------------------------
 # ประวัติข้อมูล
 # ----------------------------------------------------------------------------
-with st.expander("📖 ดูประวัติการบันทึกข้อมูล"):
-    if not baby_records.empty:
-        display_df = baby_records.rename(columns={
+with st.expander("📖 ดูประวัติการบันทึกข้อมูลของรหัสนี้"):
+    if not records_df.empty:
+        display_df = records_df.rename(columns={
             "entry_date": "วันที่บันทึก",
             "corrected_age_label": "อายุครรภ์ปรับแก้",
             "weight": "น้ำหนัก (กก.)",
@@ -359,10 +387,8 @@ with st.expander("📖 ดูประวัติการบันทึกข
         })[["วันที่บันทึก", "อายุครรภ์ปรับแก้", "น้ำหนัก (กก.)", "ความยาว (ซม.)"]]
         st.dataframe(display_df, use_container_width=True, hide_index=True)
     else:
-        st.write("ยังไม่มีข้อมูล — กรอกข้อมูลในแถบด้านซ้ายเพื่อเริ่มติดตามค่ะ 💛")
+        st.write("ยังไม่มีข้อมูลของรหัสนี้ — กรอกข้อมูลในแถบด้านซ้ายเพื่อเริ่มติดตามค่ะ 💛")
 
 st.divider()
-st.caption(
-    "⚠️ เส้นเปอร์เซ็นไทล์ในแอปนี้เป็นข้อมูลจำลองเพื่อสาธิตการทำงานเท่านั้น ไม่ใช่ตาราง "
-    "Fenton 2025 ฉบับทางการ กรุณาใช้ร่วมกับคำแนะนำของกุมารแพทย์หรือบุคลากรทางการแพทย์เสมอ 💛"
-)
+st.caption(DISCLAIMER_TEXT)
+st.caption("🔒 ข้อมูลนี้ใช้เพื่อโครงการวิจัย Prachuap Model เท่านั้น กรุณาเก็บรหัส BF Code ของท่านไว้เป็นความลับ")
